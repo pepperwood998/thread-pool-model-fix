@@ -4,7 +4,7 @@ public class App {
 
     static int corePoolSize = 3;
     static int maxPoolSize = 6;
-    static int taskNum = 10;
+    static int taskNum = 50;
 
     public static void main(String[] args) {
         CustomThreadPool customThreadPool = new CustomThreadPool(corePoolSize, maxPoolSize);
@@ -15,7 +15,7 @@ public class App {
             customThreadPool.execute(task);
         }
 
-        customThreadPool.shutdown();
+//        customThreadPool.shutdown();
     }
 }
 

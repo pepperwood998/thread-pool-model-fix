@@ -13,8 +13,8 @@ public class CustomThreadPool implements ICustomeThreadPool {
 
     private int mCorePoolSize;
     private int mMaxPoolSize;
-    private AtomicInteger mActiveThreads;
-    private AtomicInteger mAssignedThreads;
+    private AtomicInteger mAssignedThreadNum;
+    private int mRejectedTaskNum;
     private List<WorkerThread> mWorkers;
     private Queue<Runnable> mAssignPoint;
 
@@ -25,13 +25,13 @@ public class CustomThreadPool implements ICustomeThreadPool {
         mMaxPoolSize = maxPoolSize;
         mWorkers = new ArrayList<>();
         mAssignPoint = new LinkedList<>();
-
-        mAssignedThreads = new AtomicInteger(0);
+        mRejectedTaskNum = 0;
+        
+        mAssignedThreadNum = new AtomicInteger(0);
         for (int i = 0; i < corePoolSize; i++) {
             mWorkers.add(new WorkerThread("Thread-" + (i + 1), true));
             mWorkers.get(i).start();
         }
-        mActiveThreads = new AtomicInteger(mWorkers.size());
 
         // start management thread
         mManager = new ManagementThread();
@@ -41,8 +41,8 @@ public class CustomThreadPool implements ICustomeThreadPool {
     @Override
     public void execute(Runnable task) {
         try {
-            if (mAssignedThreads.get() >= mMaxPoolSize) {
-                throw new RejectedExecutionException("FULL");
+            if (mAssignedThreadNum.get() >= mMaxPoolSize) {
+                throw new RejectedExecutionException("# Rejected Tasks: " + ++mRejectedTaskNum);
             }
 
             synchronized (mAssignPoint) {
@@ -54,10 +54,11 @@ public class CustomThreadPool implements ICustomeThreadPool {
                     }
                 }
                 mAssignPoint.offer(task);
+                // notify for waiting threads to get new task
                 mAssignPoint.notifyAll();
             }
         } catch (RejectedExecutionException e) {
-            e.printStackTrace();
+            System.out.println(e.getMessage());
         }
     }
 
@@ -71,12 +72,12 @@ public class CustomThreadPool implements ICustomeThreadPool {
 
     @Override
     public int getActiveThread() {
-        return mActiveThreads.get();
+        return mWorkers.size();
     }
 
     @Override
     public int getAssignedThread() {
-        return mAssignedThreads.get();
+        return mAssignedThreadNum.get();
     }
 
     @Override
@@ -94,9 +95,8 @@ public class CustomThreadPool implements ICustomeThreadPool {
         @Override
         public void run() {
             while (true) {
-                if (mWorkers.isEmpty()) {
+                if (mWorkers.isEmpty())
                     break;
-                }
 
                 try {
                     Thread.sleep(500);
@@ -106,20 +106,21 @@ public class CustomThreadPool implements ICustomeThreadPool {
 
                 synchronized (mAssignPoint) {
                     if (!mAssignPoint.isEmpty()) {
-                        if (mAssignedThreads.get() >= mCorePoolSize && mActiveThreads.get() < mMaxPoolSize) {
+                        if (mAssignedThreadNum.get() >= mCorePoolSize && mWorkers.size() < mMaxPoolSize) {
                             // add extra thread when all core threads are assigned
-                            WorkerThread workerThread = new WorkerThread("Thread-" + mActiveThreads.getAndIncrement(),
-                                    false);
+                            WorkerThread workerThread = new WorkerThread("Thread-" + (mWorkers.size() + 1), false);
                             mWorkers.add(workerThread);
                             workerThread.start();
                         }
                     }
                 }
 
+                // remove the worker thread, if its loop ended
                 for (Iterator<WorkerThread> it = mWorkers.iterator(); it.hasNext();) {
-                    if (!it.next().isAlive()) {
+                    WorkerThread worker = it.next();
+                    if (!worker.isAlive()) {
                         it.remove();
-                        System.out.println("REMAIN: " + mActiveThreads.get() + ", WORKERS: " + mWorkers.size());
+                        System.out.println("Worker " + worker.getName() + " is removed");
                     }
                 }
 
@@ -143,17 +144,17 @@ public class CustomThreadPool implements ICustomeThreadPool {
                 Runnable task;
                 synchronized (mAssignPoint) {
                     task = mAssignPoint.poll();
+                    // notify that the task is assigned, new task can come into the assign-point
                     mAssignPoint.notifyAll();
                 }
 
                 if (task != null) {
-                    mAssignedThreads.incrementAndGet();
+                    mAssignedThreadNum.incrementAndGet();
                     task.run();
-                    mAssignedThreads.decrementAndGet();
+                    mAssignedThreadNum.decrementAndGet();
                 } else {
-                    if (mAssignedThreads.get() < mCorePoolSize && !mIsCore) {
-                        mActiveThreads.decrementAndGet();
-                        System.out.println(getName() + " is not needed no more");
+                    if (mAssignedThreadNum.get() < mCorePoolSize && !mIsCore) {
+                        System.out.println("Extra worker " + getName() + " is not needed no more");
                         break;
                     }
 
