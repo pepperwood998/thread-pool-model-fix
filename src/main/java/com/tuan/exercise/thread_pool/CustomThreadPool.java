@@ -44,6 +44,7 @@ public class CustomThreadPool implements ICustomeThreadPool {
             }
 
             synchronized (mEntry) {
+                // if a task has not been assigned to a worker-thread
                 if (mEntry.mAssignPoint != null) {
                     try {
                         mEntry.wait();
@@ -156,6 +157,7 @@ public class CustomThreadPool implements ICustomeThreadPool {
                         break;
                     }
 
+                    // if this thread is not assigned, wait for incoming task
                     synchronized (mEntry) {
                         try {
                             mEntry.wait();

@@ -14,8 +14,8 @@ public class App {
 
             customThreadPool.execute(task);
         }
-
-//        customThreadPool.shutdown();
+        
+        customThreadPool.shutdown();
     }
 }
 
