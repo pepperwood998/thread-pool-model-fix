@@ -2,9 +2,7 @@ package com.tuan.exercise.thread_pool;
 
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Queue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,7 +14,7 @@ public class CustomThreadPool implements ICustomeThreadPool {
     private AtomicInteger mAssignedThreadNum;
     private int mRejectedTaskNum;
     private List<WorkerThread> mWorkers;
-    private Queue<Runnable> mAssignPoint;
+    private RunnableEntry mEntry;
 
     private final ManagementThread mManager;
 
@@ -24,9 +22,9 @@ public class CustomThreadPool implements ICustomeThreadPool {
         mCorePoolSize = corePoolSize;
         mMaxPoolSize = maxPoolSize;
         mWorkers = new ArrayList<>();
-        mAssignPoint = new LinkedList<>();
+        mEntry = new RunnableEntry();
         mRejectedTaskNum = 0;
-        
+
         mAssignedThreadNum = new AtomicInteger(0);
         for (int i = 0; i < corePoolSize; i++) {
             mWorkers.add(new WorkerThread("Thread-" + (i + 1), true));
@@ -45,17 +43,17 @@ public class CustomThreadPool implements ICustomeThreadPool {
                 throw new RejectedExecutionException("# Rejected Tasks: " + ++mRejectedTaskNum);
             }
 
-            synchronized (mAssignPoint) {
-                if (!mAssignPoint.isEmpty()) {
+            synchronized (mEntry) {
+                if (mEntry.mAssignPoint != null) {
                     try {
-                        mAssignPoint.wait();
+                        mEntry.wait();
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
                 }
-                mAssignPoint.offer(task);
+                mEntry.mAssignPoint = task;
                 // notify for waiting threads to get new task
-                mAssignPoint.notifyAll();
+                mEntry.notifyAll();
             }
         } catch (RejectedExecutionException e) {
             System.out.println(e.getMessage());
@@ -104,8 +102,8 @@ public class CustomThreadPool implements ICustomeThreadPool {
                     e.printStackTrace();
                 }
 
-                synchronized (mAssignPoint) {
-                    if (!mAssignPoint.isEmpty()) {
+                synchronized (mEntry) {
+                    if (mEntry.mAssignPoint != null) {
                         if (mAssignedThreadNum.get() >= mCorePoolSize && mWorkers.size() < mMaxPoolSize) {
                             // add extra thread when all core threads are assigned
                             WorkerThread workerThread = new WorkerThread("Thread-" + (mWorkers.size() + 1), false);
@@ -123,7 +121,6 @@ public class CustomThreadPool implements ICustomeThreadPool {
                         System.out.println("Worker " + worker.getName() + " is removed");
                     }
                 }
-
             }
         }
     }
@@ -142,10 +139,11 @@ public class CustomThreadPool implements ICustomeThreadPool {
         public void run() {
             while (mActive.get()) {
                 Runnable task;
-                synchronized (mAssignPoint) {
-                    task = mAssignPoint.poll();
+                synchronized (mEntry) {
+                    task = mEntry.mAssignPoint;
+                    mEntry.mAssignPoint = null;
                     // notify that the task is assigned, new task can come into the assign-point
-                    mAssignPoint.notifyAll();
+                    mEntry.notifyAll();
                 }
 
                 if (task != null) {
@@ -158,9 +156,9 @@ public class CustomThreadPool implements ICustomeThreadPool {
                         break;
                     }
 
-                    synchronized (mAssignPoint) {
+                    synchronized (mEntry) {
                         try {
-                            mAssignPoint.wait();
+                            mEntry.wait();
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
